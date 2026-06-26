@@ -1,0 +1,214 @@
+name: CI/CD Pipeline
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  lint:
+    name: Linting and Formatting
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+          target: wasm32-unknown-unknown
+
+      - name: Lint Contracts
+        run: |
+          cargo fmt --all -- --check
+          cargo clippy --workspace -- -D warnings
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: frontend/package.json
+
+      - name: Install Frontend Deps
+        run: cd frontend && npm install --legacy-peer-deps
+
+      - name: Lint Frontend
+        run: cd frontend && npm run lint
+
+  test-contracts:
+    name: Contract Testing
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          target: wasm32-unknown-unknown
+
+      - name: Build WASM Target
+        run: cargo build --target wasm32-unknown-unknown --workspace
+
+      - name: Run Cargo Tests
+        run: cargo test --workspace
+
+  test-frontend:
+    name: Frontend Testing
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: frontend/package.json
+
+      - name: Install Frontend Deps
+        run: cd frontend && npm install --legacy-peer-deps
+
+      - name: Run Vitest
+        run: cd frontend && npm run test
+
+  build:
+    name: Build Artifacts
+    runs-on: ubuntu-latest
+    needs: [lint, test-contracts, test-frontend]
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          target: wasm32-unknown-unknown
+
+      - name: Build WASM Contracts
+        run: cargo build --release --target wasm32-unknown-unknown --workspace
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: frontend/package.json
+
+      - name: Install Frontend Deps
+        run: cd frontend && npm install --legacy-peer-deps
+
+      - name: Build Vite App
+        run: cd frontend && npm run build
+
+  deploy-testnet:
+    name: Deploy to Stellar Testnet
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          target: wasm32-unknown-unknown
+
+      - name: Install Stellar CLI
+        run: |
+          cargo install --locked stellar-cli --features opt
+
+      - name: Build WASM Contracts
+        run: cargo build --release --target wasm32-unknown-unknown --workspace
+
+      - name: Generate Deployer Keys & Fund
+        run: |
+          stellar keys generate deployer --network testnet
+          curl -X GET "https://friendbot.stellar.org?addr=$(stellar keys address deployer)"
+
+      - name: Deploy Contracts
+        run: |
+          # Deploy Vault
+          VAULT_WASM_HASH=$(stellar contract install \
+            --wasm target/wasm32-unknown-unknown/release/stellar_will_vault.wasm \
+            --source deployer \
+            --network testnet)
+          echo "Vault WASM Hash: $VAULT_WASM_HASH"
+
+          # Deploy Trigger
+          TRIGGER_ADDR=$(stellar contract deploy \
+            --wasm target/wasm32-unknown-unknown/release/stellar_will_trigger.wasm \
+            --source deployer \
+            --network testnet)
+          echo "Trigger Address: $TRIGGER_ADDR"
+
+          # Deploy VaultFactory
+          FACTORY_ADDR=$(stellar contract deploy \
+            --wasm target/wasm32-unknown-unknown/release/stellar_will_vault_factory.wasm \
+            --source deployer \
+            --network testnet)
+          echo "VaultFactory Address: $FACTORY_ADDR"
+
+          # Initialize VaultFactory
+          stellar contract invoke \
+            --id $FACTORY_ADDR \
+            --source deployer \
+            --network testnet \
+            -- initialize \
+            --admin $(stellar keys address deployer) \
+            --vault_wasm_hash $VAULT_WASM_HASH \
+            --native_token CDLZFC3SYJYDZT7K67VZ75HPJBMGLPTURV63VXVV25Y2NSKVNHYMTMG2
+
+          # Initialize Trigger
+          stellar contract invoke \
+            --id $TRIGGER_ADDR \
+            --source deployer \
+            --network testnet \
+            -- initialize \
+            --factory $FACTORY_ADDR
+
+          # Set Trigger in Factory
+          stellar contract invoke \
+            --id $FACTORY_ADDR \
+            --source deployer \
+            --network testnet \
+            -- set_trigger_address \
+            --trigger $TRIGGER_ADDR
+
+  deploy-frontend:
+    name: Deploy Frontend
+    runs-on: ubuntu-latest
+    needs: build
+    if: github.ref == 'refs/heads/main'
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: 'npm'
+          cache-dependency-path: frontend/package.json
+
+      - name: Install Frontend Deps
+        run: cd frontend && npm install --legacy-peer-deps
+
+      - name: Build Vite App
+        run: cd frontend && npm run build
+
+      - name: Deploy to Netlify
+        env:
+          NETLIFY_AUTH_TOKEN: ${{ secrets.NETLIFY_AUTH_TOKEN }}
+          NETLIFY_SITE_ID: ${{ secrets.NETLIFY_SITE_ID }}
+        run: |
+          if [ -n "$NETLIFY_AUTH_TOKEN" ]; then
+            cd frontend && npx netlify-cli deploy --dir=dist --prod
+          else
+            echo "Netlify tokens not configured, skipping production deployment"
+          fi
