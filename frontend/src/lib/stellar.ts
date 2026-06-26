@@ -6,6 +6,7 @@ import {
   Account,
   nativeToScVal,
   scValToNative,
+  Transaction,
 } from '@stellar/stellar-sdk';
 import {
   isConnected as isFreighterConnected,
@@ -13,7 +14,7 @@ import {
   signTransaction,
 } from '@stellar/freighter-api';
 import { isMockEnabled, VAULT_FACTORY_ID, TRIGGER_ID } from './contracts';
-import { Vault, Beneficiary, EventLog } from '../types/vault';
+import { Vault, Beneficiary, EventLog, VaultState } from '../types/vault';
 
 // RPC & Horizon clients
 const RPC_URL = 'https://soroban-testnet.stellar.org';
@@ -287,11 +288,11 @@ export const sendSorobanTransaction = async (
   const response = await rpcServer.sendTransaction(signedTx);
   
   if (response.status === 'ERROR') {
-    throw new Error(`Transaction submission failed: ${response.errorResultXdr}`);
+    throw new Error(`Transaction submission failed: ${(response as any).errorResultXdr}`);
   }
 
   const txHash = response.hash;
-  let status = response.status;
+  let status: string = response.status;
   
   for (let i = 0; i < 20; i++) {
     if (status === 'SUCCESS') {
@@ -305,13 +306,13 @@ export const sendSorobanTransaction = async (
     const txResult = await rpcServer.getTransaction(txHash);
     status = txResult.status;
     if (status === 'SUCCESS') {
-      if (txResult.returnValue) {
-        return scValToNative(txResult.returnValue);
+      if ((txResult as any).returnValue) {
+        return scValToNative((txResult as any).returnValue);
       }
       return txResult;
     }
     if (status === 'FAILED') {
-      throw new Error(`Transaction failed: ${txResult.resultXdr}`);
+      throw new Error(`Transaction failed: ${(txResult as any).resultXdr}`);
     }
   }
   
@@ -397,7 +398,7 @@ export const getVaultById = async (vaultId: number): Promise<Vault | null> => {
       lastCheckIn: lastCheckInNum,
       deadline: deadlineNum,
       balance,
-      state: stateStr,
+      state: stateStr as VaultState,
       isExpired: !!isExpired,
     };
   } catch (error) {
