@@ -17,8 +17,8 @@ export const CreateVault: React.FC<CreateVaultProps> = ({ onBackToDashboard }) =
     { address: 'GDBENEFICIARY111111111111111111111111111111111111', basisPoints: 5000 },
     { address: 'GDBENEFICIARY222222222222222222222222222222222222', basisPoints: 5000 },
   ]);
-  const [checkInInterval, setCheckInInterval] = useState<number>(120); // 2 minutes (default demo)
-  const [gracePeriod, setGracePeriod] = useState<number>(60); // 1 minute (default demo)
+  const [checkInInterval, setCheckInInterval] = useState<number>(300); // 5 minutes
+  const [gracePeriod, setGracePeriod] = useState<number>(120); // 2 minutes
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
@@ -57,9 +57,9 @@ export const CreateVault: React.FC<CreateVaultProps> = ({ onBackToDashboard }) =
   };
 
   const formatInterval = (seconds: number) => {
-    if (seconds === 60) return '1 Minute (Demo)';
-    if (seconds === 120) return '2 Minutes (Demo)';
-    if (seconds === 300) return '5 Minutes (Demo)';
+    if (seconds === 60) return '1 Minute';
+    if (seconds === 120) return '2 Minutes';
+    if (seconds === 300) return '5 Minutes';
     if (seconds === 86400) return '24 Hours';
     if (seconds === 604800) return '7 Days';
     if (seconds === 2592000) return '30 Days';
@@ -144,10 +144,10 @@ export const CreateVault: React.FC<CreateVaultProps> = ({ onBackToDashboard }) =
                   onChange={(e) => setGracePeriod(parseInt(e.target.value))}
                   className="w-full text-xs px-3 py-2.5 rounded-xl glass-input cursor-pointer"
                 >
-                  <option value={60}>1 Minute (Demo)</option>
-                  <option value={180}>3 Minutes (Demo)</option>
+                  <option value={60}>1 Minute</option>
+                  <option value={180}>3 Minutes</option>
+                  <option value={300}>5 Minutes</option>
                   <option value={3600}>1 Hour</option>
-                  <option value={86400}>24 Hours</option>
                   <option value={604800}>7 Days</option>
                 </select>
               </div>
