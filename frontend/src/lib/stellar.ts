@@ -1,16 +1,22 @@
 import {
   rpc,
   Horizon,
+  Contract,
+  TransactionBuilder,
+  Account,
+  nativeToScVal,
+  scValToNative,
 } from '@stellar/stellar-sdk';
 import {
   isConnected as isFreighterConnected,
   requestAccess as requestFreighterAccess,
+  signTransaction,
 } from '@stellar/freighter-api';
-import { isMockEnabled } from './contracts';
+import { isMockEnabled, VAULT_FACTORY_ID, TRIGGER_ID } from './contracts';
 import { Vault, Beneficiary, EventLog } from '../types/vault';
 
 // RPC & Horizon clients
-const RPC_URL = 'https://soroban-rpc.stellar.org';
+const RPC_URL = 'https://soroban-testnet.stellar.org';
 const HORIZON_URL = 'https://horizon-testnet.stellar.org';
 
 export const rpcServer = new rpc.Server(RPC_URL);
@@ -57,24 +63,8 @@ const INITIAL_MOCK_VAULTS: Vault[] = [
   }
 ];
 
-const INITIAL_MOCK_LOGS: EventLog[] = [
-  {
-    id: 'e1',
-    type: 'VaultCreated',
-    vaultId: 1,
-    timestamp: Math.floor(Date.now() / 1000) - 1000,
-    details: 'Vault #1 created by Owner. 500 XLM locked.',
-    txHash: 'a5c7f8...99db21',
-  },
-  {
-    id: 'e2',
-    type: 'VaultCreated',
-    vaultId: 2,
-    timestamp: Math.floor(Date.now() / 1000) - 500,
-    details: 'Vault #2 created by Owner. 1250 XLM locked.',
-    txHash: 'e712fd...55bc78',
-  }
-];
+const INITIAL_MOCK_LOGS: EventLog[] = [];
+
 
 // Load from localStorage or set initial
 export const getMockVaults = (): Vault[] => {
@@ -112,11 +102,12 @@ export const setMockWallet = (address: string) => {
 export const getMockLogs = (): EventLog[] => {
   const data = localStorage.getItem(MOCK_LOGS_KEY);
   if (!data) {
-    localStorage.setItem(MOCK_LOGS_KEY, JSON.stringify(INITIAL_MOCK_LOGS));
-    return INITIAL_MOCK_LOGS;
+    localStorage.setItem(MOCK_LOGS_KEY, JSON.stringify([]));
+    return [];
   }
   return JSON.parse(data);
 };
+
 
 export const addMockLog = (log: Omit<EventLog, 'id' | 'timestamp'>) => {
   const logs = getMockLogs();
@@ -133,18 +124,27 @@ export const addMockLog = (log: Omit<EventLog, 'id' | 'timestamp'>) => {
   window.dispatchEvent(event);
 };
 
-export const getMockBalance = (): number => {
-  const balance = localStorage.getItem(MOCK_BALANCE_KEY);
+export const getMockBalance = (address?: string): number => {
+  const addr = address || getMockWallet();
+  const key = `${MOCK_BALANCE_KEY}_${addr}`;
+  const balance = localStorage.getItem(key);
   if (!balance) {
-    localStorage.setItem(MOCK_BALANCE_KEY, '8500');
-    return 8500;
+    // Owner starts with 8500 XLM, beneficiaries with 100 XLM, others with 0 XLM
+    const initial = addr.includes('OWNER') ? 8500 : addr.includes('BENEFICIARY') ? 100 : 0;
+    localStorage.setItem(key, String(initial));
+    return initial;
   }
   return parseFloat(balance);
 };
 
+export const updateMockBalanceForAddress = (address: string, amount: number) => {
+  const current = getMockBalance(address);
+  const key = `${MOCK_BALANCE_KEY}_${address}`;
+  localStorage.setItem(key, String(Math.max(0, current + amount)));
+};
+
 export const updateMockBalance = (amount: number) => {
-  const current = getMockBalance();
-  localStorage.setItem(MOCK_BALANCE_KEY, String(Math.max(0, current + amount)));
+  updateMockBalanceForAddress(getMockWallet(), amount);
 };
 
 // --- STAGE TIME PASSING (MOCK ONLY) ---
@@ -166,8 +166,8 @@ export const addMockTime = (seconds: number) => {
 
 // --- SDK AND ON-CHAIN IMPLEMENTATIONS ---
 
-export const getWalletAddress = async (): Promise<string> => {
-  if (isMockEnabled()) {
+export const getWalletAddress = async (forceReal = false): Promise<string> => {
+  if (isMockEnabled() && !forceReal) {
     return getMockWallet();
   }
   
@@ -194,7 +194,7 @@ export const getWalletAddress = async (): Promise<string> => {
 
 export const getXlmBalance = async (address: string): Promise<number> => {
   if (isMockEnabled()) {
-    return getMockBalance();
+    return getMockBalance(address);
   }
 
   try {
@@ -207,14 +207,148 @@ export const getXlmBalance = async (address: string): Promise<number> => {
   }
 };
 
+// --- SOROBAN TRANSACTION HELPERS ---
+
+const parseState = (stateVal: any): string => {
+  if (!stateVal) return 'Active';
+  if (typeof stateVal === 'string') return stateVal;
+  if (typeof stateVal === 'number') {
+    return stateVal === 0 ? 'Active' : stateVal === 1 ? 'Triggered' : 'Cancelled';
+  }
+  if (typeof stateVal === 'object') {
+    const name = stateVal.name || stateVal.switch?.name || (Object.keys(stateVal)[0]);
+    if (name) return name;
+  }
+  return 'Active';
+};
+
+export const simulateSorobanCall = async (
+  contractId: string,
+  methodName: string,
+  args: any[]
+): Promise<any> => {
+  const dummySource = new Account("GDV5LHWHXDHGY4PEOG6HDKTC4HL64GTUR5LGDTYGAHW4NQUZGAVGNAVP", "0");
+  const contract = new Contract(contractId);
+  const tx = new TransactionBuilder(dummySource, {
+    fee: "100",
+    networkPassphrase: "Test SDF Network ; September 2015",
+  })
+  .addOperation(
+    contract.call(methodName, ...args)
+  )
+  .setTimeout(30)
+  .build();
+
+  const simResult = await rpcServer.simulateTransaction(tx);
+  if (rpc.Api.isSimulationSuccess(simResult)) {
+    if (simResult.result && simResult.result.retval) {
+      return scValToNative(simResult.result.retval);
+    }
+    return null;
+  }
+  throw new Error(`Simulation failed for ${methodName}: ${rpc.Api.isSimulationError(simResult) ? simResult.error : 'Unknown error'}`);
+};
+
+export const sendSorobanTransaction = async (
+  ownerAddress: string,
+  contractId: string,
+  methodName: string,
+  args: any[]
+): Promise<any> => {
+  const account = await rpcServer.getAccount(ownerAddress);
+  
+  const contract = new Contract(contractId);
+  const tx = new TransactionBuilder(account, {
+    fee: "100",
+    networkPassphrase: "Test SDF Network ; September 2015",
+  })
+  .addOperation(
+    contract.call(methodName, ...args)
+  )
+  .setTimeout(60)
+  .build();
+
+  const simResult = await rpcServer.simulateTransaction(tx);
+  if (rpc.Api.isSimulationError(simResult)) {
+    throw new Error(`Simulation failed: ${simResult.error}`);
+  }
+
+  const assembledTx = rpc.assembleTransaction(tx, simResult).build();
+
+  const freighterResponse = await signTransaction(assembledTx.toXDR(), {
+    networkPassphrase: "Test SDF Network ; September 2015",
+  }) as any;
+
+  if (freighterResponse.error) {
+    throw new Error(`Freighter signing failed: ${freighterResponse.error}`);
+  }
+
+  const signedTx = TransactionBuilder.fromXDR(freighterResponse.signedTxXdr, "Test SDF Network ; September 2015") as Transaction;
+  const response = await rpcServer.sendTransaction(signedTx);
+  
+  if (response.status === 'ERROR') {
+    throw new Error(`Transaction submission failed: ${response.errorResultXdr}`);
+  }
+
+  const txHash = response.hash;
+  let status = response.status;
+  
+  for (let i = 0; i < 20; i++) {
+    if (status === 'SUCCESS') {
+      break;
+    }
+    if (status === 'FAILED') {
+      throw new Error(`Transaction failed: ${txHash}`);
+    }
+    
+    await new Promise((resolve) => setTimeout(resolve, 1500));
+    const txResult = await rpcServer.getTransaction(txHash);
+    status = txResult.status;
+    if (status === 'SUCCESS') {
+      if (txResult.returnValue) {
+        return scValToNative(txResult.returnValue);
+      }
+      return txResult;
+    }
+    if (status === 'FAILED') {
+      throw new Error(`Transaction failed: ${txResult.resultXdr}`);
+    }
+  }
+  
+  throw new Error(`Transaction polling timed out: ${txHash}`);
+};
+
+// --- ON-CHAIN VAULT READS & WRITES ---
+
 export const getVaultsByOwner = async (ownerAddress: string): Promise<Vault[]> => {
   if (isMockEnabled()) {
     return getMockVaults().filter(v => v.owner === ownerAddress);
   }
   
-  // Real implementation: call Factory contract get_vaults_by_owner, then load details
-  // For safety in dev, we return empty or stub until fully deployed
-  return [];
+  try {
+    const rawIds = await simulateSorobanCall(
+      VAULT_FACTORY_ID,
+      'get_vaults_by_owner',
+      [nativeToScVal(ownerAddress, { type: 'address' })]
+    );
+    
+    if (!rawIds || !Array.isArray(rawIds)) {
+      return [];
+    }
+    
+    const vaults: Vault[] = [];
+    for (const rawId of rawIds) {
+      const vaultId = Number(rawId);
+      const vault = await getVaultById(vaultId);
+      if (vault) {
+        vaults.push(vault);
+      }
+    }
+    return vaults;
+  } catch (error) {
+    console.error('Error fetching vaults by owner:', error);
+    return [];
+  }
 };
 
 export const getVaultById = async (vaultId: number): Promise<Vault | null> => {
@@ -222,7 +356,54 @@ export const getVaultById = async (vaultId: number): Promise<Vault | null> => {
     return getMockVaults().find(v => v.id === vaultId) || null;
   }
   
-  return null;
+  try {
+    const vaultAddress = await simulateSorobanCall(
+      VAULT_FACTORY_ID,
+      'get_vault_address',
+      [nativeToScVal(vaultId, { type: 'u64' })]
+    );
+    
+    const owner = await simulateSorobanCall(vaultAddress, 'get_owner', []);
+    const rawBeneficiaries = await simulateSorobanCall(vaultAddress, 'get_beneficiaries', []);
+    const checkInInterval = await simulateSorobanCall(vaultAddress, 'get_check_in_interval', []);
+    const gracePeriod = await simulateSorobanCall(vaultAddress, 'get_grace_period', []);
+    const lastCheckIn = await simulateSorobanCall(vaultAddress, 'get_last_check_in', []);
+    const state = await simulateSorobanCall(vaultAddress, 'get_state', []);
+    const balanceRaw = await simulateSorobanCall(vaultAddress, 'get_balance', []);
+    const isExpired = await simulateSorobanCall(vaultAddress, 'is_expired', []);
+    
+    const beneficiaries = Array.isArray(rawBeneficiaries)
+      ? rawBeneficiaries.map((item: any) => ({
+          address: typeof item[0] === 'string' ? item[0] : item[0].toString(),
+          basisPoints: Number(item[1]),
+        }))
+      : [];
+
+    const balance = Number(balanceRaw) / 10_000_000;
+    const stateStr = parseState(state);
+    
+    const lastCheckInNum = Number(lastCheckIn);
+    const checkInIntervalNum = Number(checkInInterval);
+    const gracePeriodNum = Number(gracePeriod);
+    const deadlineNum = lastCheckInNum + checkInIntervalNum + gracePeriodNum;
+
+    return {
+      id: vaultId,
+      address: vaultAddress,
+      owner: typeof owner === 'string' ? owner : owner.toString(),
+      beneficiaries,
+      checkInInterval: checkInIntervalNum,
+      gracePeriod: gracePeriodNum,
+      lastCheckIn: lastCheckInNum,
+      deadline: deadlineNum,
+      balance,
+      state: stateStr,
+      isExpired: !!isExpired,
+    };
+  } catch (error) {
+    console.error(`Error fetching vault ${vaultId}:`, error);
+    return null;
+  }
 };
 
 export const getAllExpiredVaults = async (): Promise<Vault[]> => {
@@ -230,7 +411,30 @@ export const getAllExpiredVaults = async (): Promise<Vault[]> => {
     return getMockVaults().filter(v => v.isExpired && v.state === 'Active');
   }
   
-  return [];
+  try {
+    const rawIds = await simulateSorobanCall(
+      VAULT_FACTORY_ID,
+      'get_all_expired_vaults',
+      []
+    );
+    
+    if (!rawIds || !Array.isArray(rawIds)) {
+      return [];
+    }
+    
+    const vaults: Vault[] = [];
+    for (const rawId of rawIds) {
+      const vaultId = Number(rawId);
+      const vault = await getVaultById(vaultId);
+      if (vault) {
+        vaults.push(vault);
+      }
+    }
+    return vaults;
+  } catch (error) {
+    console.error('Error fetching all expired vaults:', error);
+    return [];
+  }
 };
 
 export const createVault = async (
@@ -241,7 +445,6 @@ export const createVault = async (
   depositAmount: number
 ): Promise<number> => {
   if (isMockEnabled()) {
-    // Validation
     const totalBP = beneficiaries.reduce((acc, b) => acc + b.basisPoints, 0);
     if (totalBP !== 10000) {
       throw new Error('Beneficiary splits must total 10000 basis points');
@@ -280,8 +483,44 @@ export const createVault = async (
     return newId;
   }
 
-  // Real implementation: build transaction calling Factory `create_vault`, sign with Freighter, submit
-  throw new Error('On-chain operations require smart contract deployment.');
+  const beneficiariesScVal = nativeToScVal(
+    beneficiaries.map((b) => [
+      nativeToScVal(b.address, { type: 'address' }),
+      nativeToScVal(b.basisPoints, { type: 'u32' }),
+    ])
+  );
+
+  const vaultId = await sendSorobanTransaction(
+    owner,
+    VAULT_FACTORY_ID,
+    'create_vault',
+    [
+      nativeToScVal(owner, { type: 'address' }),
+      beneficiariesScVal,
+      nativeToScVal(checkInInterval, { type: 'u64' }),
+      nativeToScVal(gracePeriod, { type: 'u64' }),
+    ]
+  );
+
+  const vaultIdNum = Number(vaultId);
+
+  if (depositAmount > 0) {
+    const vaultAddress = await simulateSorobanCall(
+      VAULT_FACTORY_ID,
+      'get_vault_address',
+      [nativeToScVal(vaultIdNum, { type: 'u64' })]
+    );
+
+    const stroops = BigInt(Math.floor(depositAmount * 10_000_000));
+    await sendSorobanTransaction(
+      owner,
+      vaultAddress,
+      'deposit',
+      [nativeToScVal(stroops, { type: 'i128' })]
+    );
+  }
+
+  return vaultIdNum;
 };
 
 export const depositVault = async (vaultId: number, amount: number): Promise<void> => {
@@ -305,7 +544,20 @@ export const depositVault = async (vaultId: number, amount: number): Promise<voi
     return;
   }
   
-  throw new Error('On-chain operations require smart contract deployment.');
+  const owner = await getWalletAddress();
+  const vaultAddress = await simulateSorobanCall(
+    VAULT_FACTORY_ID,
+    'get_vault_address',
+    [nativeToScVal(vaultId, { type: 'u64' })]
+  );
+  
+  const stroops = BigInt(Math.floor(amount * 10_000_000));
+  await sendSorobanTransaction(
+    owner,
+    vaultAddress,
+    'deposit',
+    [nativeToScVal(stroops, { type: 'i128' })]
+  );
 };
 
 export const checkInVault = async (vaultId: number): Promise<void> => {
@@ -330,7 +582,19 @@ export const checkInVault = async (vaultId: number): Promise<void> => {
     return;
   }
   
-  throw new Error('On-chain operations require smart contract deployment.');
+  const owner = await getWalletAddress();
+  const vaultAddress = await simulateSorobanCall(
+    VAULT_FACTORY_ID,
+    'get_vault_address',
+    [nativeToScVal(vaultId, { type: 'u64' })]
+  );
+  
+  await sendSorobanTransaction(
+    owner,
+    vaultAddress,
+    'check_in',
+    []
+  );
 };
 
 export const cancelVault = async (vaultId: number): Promise<void> => {
@@ -355,7 +619,19 @@ export const cancelVault = async (vaultId: number): Promise<void> => {
     return;
   }
   
-  throw new Error('On-chain operations require smart contract deployment.');
+  const owner = await getWalletAddress();
+  const vaultAddress = await simulateSorobanCall(
+    VAULT_FACTORY_ID,
+    'get_vault_address',
+    [nativeToScVal(vaultId, { type: 'u64' })]
+  );
+  
+  await sendSorobanTransaction(
+    owner,
+    vaultAddress,
+    'cancel_vault',
+    []
+  );
 };
 
 export const updateBeneficiaries = async (vaultId: number, beneficiaries: Beneficiary[]): Promise<void> => {
@@ -381,7 +657,26 @@ export const updateBeneficiaries = async (vaultId: number, beneficiaries: Benefi
     return;
   }
   
-  throw new Error('On-chain operations require smart contract deployment.');
+  const owner = await getWalletAddress();
+  const vaultAddress = await simulateSorobanCall(
+    VAULT_FACTORY_ID,
+    'get_vault_address',
+    [nativeToScVal(vaultId, { type: 'u64' })]
+  );
+
+  const beneficiariesScVal = nativeToScVal(
+    beneficiaries.map((b) => [
+      nativeToScVal(b.address, { type: 'address' }),
+      nativeToScVal(b.basisPoints, { type: 'u32' }),
+    ])
+  );
+  
+  await sendSorobanTransaction(
+    owner,
+    vaultAddress,
+    'update_beneficiaries',
+    [beneficiariesScVal]
+  );
 };
 
 export const triggerRelease = async (vaultId: number): Promise<void> => {
@@ -408,7 +703,6 @@ export const triggerRelease = async (vaultId: number): Promise<void> => {
       details: `Vault #${vaultId} was triggered permissionlessly. Distribution initiated.`
     });
 
-    // Distribute to beneficiaries mock
     let remaining = balance;
     v.beneficiaries.forEach((b, i) => {
       let amount = Math.floor((balance * b.basisPoints) / 10000);
@@ -418,10 +712,7 @@ export const triggerRelease = async (vaultId: number): Promise<void> => {
       remaining -= amount;
 
       if (amount > 0) {
-        // If current wallet is a beneficiary, simulate their balance increasing
-        if (getMockWallet() === b.address) {
-          updateMockBalance(amount);
-        }
+        updateMockBalanceForAddress(b.address, amount);
         
         addMockLog({
           type: 'FundsDistributed',
@@ -434,5 +725,11 @@ export const triggerRelease = async (vaultId: number): Promise<void> => {
     return;
   }
   
-  throw new Error('On-chain operations require smart contract deployment.');
+  const caller = await getWalletAddress();
+  await sendSorobanTransaction(
+    caller,
+    TRIGGER_ID,
+    'trigger_release',
+    [nativeToScVal(vaultId, { type: 'u64' })]
+  );
 };
