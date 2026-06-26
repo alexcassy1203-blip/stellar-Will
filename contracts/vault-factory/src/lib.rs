@@ -1,5 +1,13 @@
 #![no_std]
-use soroban_sdk::{contract, contractimpl, contracttype, symbol_short, Address, BytesN, Env, Vec};
+use soroban_sdk::{contract, contractimpl, contracttype, symbol_short, Address, BytesN, Env, Symbol, Vec};
+
+// Import vault client into its own module to avoid DataKey name clash
+mod vault_contract {
+    soroban_sdk::contractimport!(
+        file = "../../target/wasm32v1-none/release/stellar_will_vault.wasm"
+    );
+}
+use vault_contract::Client as VaultClient;
 
 #[contracttype]
 #[derive(Clone)]
@@ -57,10 +65,14 @@ impl VaultFactory {
         env.storage().instance().set(&DataKey::VaultCount, &vault_count);
 
         let wasm_hash: BytesN<32> = env.storage().instance().get(&DataKey::VaultWasmHash).unwrap();
-        let trigger: Address = env.storage().instance().get(&DataKey::TriggerContract).expect("Trigger contract not registered in factory");
+        let trigger: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::TriggerContract)
+            .expect("Trigger not set");
         let token: Address = env.storage().instance().get(&DataKey::NativeToken).unwrap();
 
-        // Create salt from vault_id
+        // Deterministic salt from vault_id
         let mut salt_bytes = [0u8; 32];
         let id_bytes = vault_count.to_be_bytes();
         for i in 0..8 {
@@ -68,11 +80,11 @@ impl VaultFactory {
         }
         let salt = BytesN::from_array(&env, &salt_bytes);
 
-        // Deploy vault instance
+        // Deploy vault instance from stored WASM hash
         let vault_address = env.deployer().with_current_contract(salt).deploy(wasm_hash);
 
-        // Initialize the vault instance
-        let vault_client = stellar_will_vault::VaultClient::new(&env, &vault_address);
+        // Initialize via imported client (interface only — no symbol clash)
+        let vault_client = VaultClient::new(&env, &vault_address);
         vault_client.initialize(
             &owner,
             &beneficiaries,
@@ -83,7 +95,7 @@ impl VaultFactory {
             &vault_count,
         );
 
-        // Registry records
+        // Registry
         env.storage().instance().set(&DataKey::Vault(vault_count), &vault_address);
         env.storage().instance().set(&DataKey::VaultOwner(vault_count), &owner);
 
@@ -93,9 +105,10 @@ impl VaultFactory {
             .get(&DataKey::OwnerVaults(owner.clone()))
             .unwrap_or(Vec::new(&env));
         owner_vaults.push_back(vault_count);
-        env.storage().instance().set(&DataKey::OwnerVaults(owner.clone()), &owner_vaults);
+        env.storage()
+            .instance()
+            .set(&DataKey::OwnerVaults(owner.clone()), &owner_vaults);
 
-        // Emit event: VaultCreated { vault_id, owner, address }
         env.events().publish(
             (symbol_short!("Created"), vault_count, owner.clone()),
             vault_address.clone(),
@@ -105,15 +118,24 @@ impl VaultFactory {
     }
 
     pub fn get_vault_address(env: Env, vault_id: u64) -> Address {
-        env.storage().instance().get(&DataKey::Vault(vault_id)).expect("Vault does not exist")
+        env.storage()
+            .instance()
+            .get(&DataKey::Vault(vault_id))
+            .expect("Vault does not exist")
     }
 
     pub fn get_vaults_by_owner(env: Env, owner: Address) -> Vec<u64> {
-        env.storage().instance().get(&DataKey::OwnerVaults(owner)).unwrap_or(Vec::new(&env))
+        env.storage()
+            .instance()
+            .get(&DataKey::OwnerVaults(owner))
+            .unwrap_or(Vec::new(&env))
     }
 
     pub fn get_vault_owner(env: Env, vault_id: u64) -> Address {
-        env.storage().instance().get(&DataKey::VaultOwner(vault_id)).expect("Vault does not exist")
+        env.storage()
+            .instance()
+            .get(&DataKey::VaultOwner(vault_id))
+            .expect("Vault does not exist")
     }
 
     pub fn get_vault_count(env: Env) -> u64 {
@@ -123,10 +145,13 @@ impl VaultFactory {
     pub fn get_all_expired_vaults(env: Env) -> Vec<u64> {
         let vault_count: u64 = env.storage().instance().get(&DataKey::VaultCount).unwrap_or(0);
         let mut expired = Vec::new(&env);
-
         for i in 1..=vault_count {
-            if let Some(vault_address) = env.storage().instance().get::<_, Address>(&DataKey::Vault(i)) {
-                let vault_client = stellar_will_vault::VaultClient::new(&env, &vault_address);
+            if let Some(vault_address) = env
+                .storage()
+                .instance()
+                .get::<_, Address>(&DataKey::Vault(i))
+            {
+                let vault_client = VaultClient::new(&env, &vault_address);
                 if vault_client.is_expired() {
                     expired.push_back(i);
                 }
@@ -138,4 +163,3 @@ impl VaultFactory {
 
 #[cfg(test)]
 mod test;
-
