@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from 'react';
+import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
 import { getWalletAddress, getXlmBalance, getMockVaults } from '../lib/stellar';
 import { isMockEnabled, setMockEnabled } from '../lib/contracts';
 
@@ -12,7 +12,16 @@ export interface WalletState {
   beneficiaryCount: number;
 }
 
-export const useWallet = () => {
+interface WalletContextType extends WalletState {
+  connect: (forceReal?: boolean) => Promise<void>;
+  disconnect: () => void;
+  toggleMockMode: (enabled: boolean) => void;
+  refreshBalance: () => Promise<void>;
+}
+
+const WalletContext = createContext<WalletContextType | undefined>(undefined);
+
+export const WalletProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [state, setState] = useState<WalletState>({
     address: '',
     balance: 0,
@@ -39,6 +48,8 @@ export const useWallet = () => {
 
       setState(prev => ({
         ...prev,
+        address: addr,
+        isConnected: !!addr,
         balance,
         role,
         beneficiaryCount: beneficiaries.length,
@@ -50,16 +61,17 @@ export const useWallet = () => {
     }
   }, []);
 
-  const connect = useCallback(async () => {
+  const connect = useCallback(async (forceReal = false) => {
+    if (forceReal && isMockEnabled()) {
+      localStorage.setItem('stellarwill_mock_mode', 'false');
+      localStorage.setItem('stellarwill_pending_connect', 'true');
+      window.location.reload();
+      return;
+    }
+
     setState(prev => ({ ...prev, isLoading: true }));
     try {
-      const addr = await getWalletAddress();
-      setState(prev => ({
-        ...prev,
-        address: addr,
-        isConnected: true,
-        isLoading: false
-      }));
+      const addr = await getWalletAddress(forceReal);
       await refreshBalance(addr);
     } catch (error) {
       console.error('Wallet connection failed:', error);
@@ -88,9 +100,19 @@ export const useWallet = () => {
     setMockEnabled(enabled);
   }, []);
 
+  // Auto-connect silently in mock/demo mode (no Freighter popup)
   useEffect(() => {
-    connect();
-  }, [connect]);
+    if (localStorage.getItem('stellarwill_pending_connect') === 'true') {
+      localStorage.removeItem('stellarwill_pending_connect');
+      connect(true);
+    } else if (isMockEnabled()) {
+      connect();
+    } else {
+      // In real mode, just mark loading as done — user must click Connect Wallet
+      setState(prev => ({ ...prev, isLoading: false }));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Listen for mock balance changes or custom mock updates
   useEffect(() => {
@@ -103,11 +125,29 @@ export const useWallet = () => {
     return () => window.removeEventListener('stellarwill_mock_event', handleMockUpdate);
   }, [state.address, refreshBalance]);
 
-  return {
-    ...state,
-    connect,
-    disconnect,
-    toggleMockMode,
-    refreshBalance: () => state.address && refreshBalance(state.address),
-  };
+  const triggerRefreshBalance = useCallback(async () => {
+    if (state.address) {
+      await refreshBalance(state.address);
+    }
+  }, [state.address, refreshBalance]);
+
+  return (
+    <WalletContext.Provider value={{
+      ...state,
+      connect,
+      disconnect,
+      toggleMockMode,
+      refreshBalance: triggerRefreshBalance
+    }}>
+      {children}
+    </WalletContext.Provider>
+  );
+};
+
+export const useWallet = () => {
+  const context = useContext(WalletContext);
+  if (context === undefined) {
+    throw new Error('useWallet must be used within a WalletProvider');
+  }
+  return context;
 };
