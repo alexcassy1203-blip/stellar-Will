@@ -1330,8 +1330,6 @@ name = "stellar-will-trigger"
 version = "0.1.0"
 dependencies = [
  "soroban-sdk",
- "stellar-will-vault",
- "stellar-will-vault-factory",
 ]
 
 [[package]]
@@ -1346,8 +1344,6 @@ name = "stellar-will-vault-factory"
 version = "0.1.0"
 dependencies = [
  "soroban-sdk",
- "stellar-will-trigger",
- "stellar-will-vault",
 ]
 
 [[package]]
