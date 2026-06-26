@@ -1,0 +1,20 @@
+global:
+  soroban:
+    default:
+      rpc_url: "https://soroban-rpc.stellar.org"
+      network_passphrase: "Test SDF Network ; September 2015"
+      horizon_url: "https://horizon-testnet.stellar.org"
+  accounts:
+    - name: deployer
+      secret: "add-your-secret-key-here"
+  contracts:
+    vault:
+      wasm_path: "target/wasm32-unknown-unknown/release/stellar_will_vault.wasm"
+      network: testnet
+    vault-factory:
+      wasm_path: "target/wasm32-unknown-unknown/release/stellar_will_vault_factory.wasm"
+      network: testnet
+    trigger:
+      wasm_path: "target/wasm32-unknown-unknown/release/stellar_will_trigger.wasm"
+      network: testnet
+
