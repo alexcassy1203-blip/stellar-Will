@@ -75,13 +75,20 @@ export const VaultCard: React.FC<VaultCardProps> = ({ vault, onSelect, onRefresh
     }
     // Expiring soon warning: check if remaining time is less than 60 seconds
     const now = Math.floor(Date.now() / 1000);
-    const timeRemaining = vault.lastCheckIn + vault.checkInInterval + vault.gracePeriod - now;
+    const deadline = isOwner 
+      ? vault.lastCheckIn + vault.checkInInterval 
+      : vault.lastCheckIn + vault.checkInInterval + vault.gracePeriod;
+    const timeRemaining = deadline - now;
     if (timeRemaining > 0 && timeRemaining < 60) {
       return <span className="bg-amber-50 text-amber-600 border border-amber-200 px-2.5 py-1 rounded-lg text-[10px] font-bold animate-pulse">Expiring Soon</span>;
     }
     
     return <span className="bg-emerald-50 text-emerald-600 border border-emerald-200 px-2.5 py-1 rounded-lg text-[10px] font-bold">Active</span>;
   };
+
+  const timerDeadline = isOwner
+    ? vault.lastCheckIn + vault.checkInInterval
+    : vault.lastCheckIn + vault.checkInInterval + vault.gracePeriod;
 
   return (
     <div
@@ -115,7 +122,7 @@ export const VaultCard: React.FC<VaultCardProps> = ({ vault, onSelect, onRefresh
             <span>{vault.beneficiaries.length} Beneficiary(s)</span>
           </div>
           <div>
-            <CountdownTimer deadline={vault.lastCheckIn + vault.checkInInterval + vault.gracePeriod} state={vault.state} />
+            <CountdownTimer deadline={timerDeadline} state={vault.state} />
           </div>
         </div>
       </div>

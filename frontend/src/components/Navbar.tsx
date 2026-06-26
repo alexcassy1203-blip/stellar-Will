@@ -1,26 +1,26 @@
 import React from 'react';
-import { Wallet, Settings } from 'lucide-react';
+import { Wallet, Menu } from 'lucide-react';
 import { useWallet } from '../hooks/useWallet';
 
 interface NavbarProps {
   activeTab: string;
   setActiveTab: (tab: string) => void;
   onSimulateTime: (seconds: number) => void;
+  onToggleSidebar: () => void;
 }
 
 const NAV_LINKS = [
   { id: 'dashboard',   label: 'My Vaults' },
   { id: 'create',      label: 'Create Vault' },
-  { id: 'triggers',    label: 'Public Triggers' },
   { id: 'beneficiary', label: 'Beneficiary View' },
 ];
 
-export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, onSimulateTime }) => {
-  const { address, balance, isConnected, isMock, connect, disconnect, toggleMockMode } = useWallet();
+export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, onSimulateTime, onToggleSidebar }) => {
+  const { address, balance, isConnected, isMock, connect, disconnect } = useWallet();
   const truncate = (addr: string) => addr ? `${addr.slice(0, 8)}...${addr.slice(-4)}` : '';
 
   return (
-    <header style={{
+    <header className="app-header" style={{
       background: 'rgba(255,255,255,0.88)',
       backdropFilter: 'blur(14px)',
       borderBottom: '1px solid #ece8e4',
@@ -33,33 +33,55 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, onSimul
       top: 0,
       zIndex: 50,
     }}>
-      {/* Nav Links */}
-      <nav style={{ display: 'flex', gap: '6px' }}>
-        {NAV_LINKS.map(({ id, label }) => {
-          const isActive = activeTab === id || (activeTab === 'detail' && id === 'dashboard');
-          return (
-            <button
-              key={id}
-              onClick={() => setActiveTab(id)}
-              style={{
-                background: 'none',
-                border: 'none',
-                padding: '8px 18px',
-                fontSize: '15px',
-                fontWeight: isActive ? 700 : 500,
-                color: isActive ? '#8B0000' : '#666',
-                cursor: 'pointer',
-                fontFamily: 'inherit',
-                borderBottom: isActive ? '2.5px solid #8B0000' : '2.5px solid transparent',
-                marginBottom: '-1px',
-                transition: 'all 0.15s',
-              }}
-            >
-              {label}
-            </button>
-          );
-        })}
-      </nav>
+      {/* Left side: Mobile menu toggle + nav links */}
+      <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+        <button
+          className="mobile-menu-btn"
+          onClick={onToggleSidebar}
+          style={{
+            background: 'none',
+            border: 'none',
+            cursor: 'pointer',
+            color: '#1a1a1a',
+            display: 'none',
+            alignItems: 'center',
+            justifyContent: 'center',
+            padding: '8px',
+            borderRadius: '8px',
+            borderWidth: '1px',
+            borderColor: '#ece8e4',
+          }}
+        >
+          <Menu size={22} />
+        </button>
+
+        <nav className="desktop-nav" style={{ display: 'flex', gap: '6px' }}>
+          {NAV_LINKS.map(({ id, label }) => {
+            const isActive = activeTab === id || (activeTab === 'detail' && id === 'dashboard');
+            return (
+              <button
+                key={id}
+                onClick={() => setActiveTab(id)}
+                style={{
+                  background: 'none',
+                  border: 'none',
+                  padding: '8px 18px',
+                  fontSize: '15px',
+                  fontWeight: isActive ? 700 : 500,
+                  color: isActive ? '#8B0000' : '#666',
+                  cursor: 'pointer',
+                  fontFamily: 'inherit',
+                  borderBottom: isActive ? '2.5px solid #8B0000' : '2.5px solid transparent',
+                  marginBottom: '-1px',
+                  transition: 'all 0.15s',
+                }}
+              >
+                {label}
+              </button>
+            );
+          })}
+        </nav>
+      </div>
 
       {/* Right side */}
       <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
@@ -83,21 +105,7 @@ export const Navbar: React.FC<NavbarProps> = ({ activeTab, setActiveTab, onSimul
               <Wallet size={18} />
             </button>
           </div>
-        ) : (
-          <button
-            onClick={() => connect(true)}
-            style={{
-              display: 'flex', alignItems: 'center', gap: '10px',
-              background: 'url(/src/assets/red_marble.png) center/cover',
-              color: 'white', border: 'none', borderRadius: '12px',
-              padding: '12px 24px', fontSize: '15px', fontWeight: 700,
-              cursor: 'pointer', fontFamily: 'inherit',
-              boxShadow: '0 4px 14px rgba(139,0,0,0.3)',
-            }}
-          >
-            <Wallet size={17} /> Connect Wallet
-          </button>
-        )}
+        ) : null}
 
       </div>
     </header>

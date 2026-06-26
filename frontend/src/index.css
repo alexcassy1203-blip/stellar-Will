@@ -80,3 +80,86 @@
 ::-webkit-scrollbar-thumb:hover {
   background: #4b5563;
 }
+
+/* Responsiveness & Mobile Drawer Overrides */
+@media (max-width: 1024px) {
+  /* Sidebar Drawer styling */
+  .app-sidebar {
+    position: fixed !important;
+    left: -280px;
+    top: 0;
+    z-index: 100 !important;
+    height: 100vh !important;
+    transition: left 0.3s cubic-bezier(0.4, 0, 0.2, 1) !important;
+    box-shadow: 4px 0 24px rgba(0, 0, 0, 0.15) !important;
+  }
+  .app-sidebar.open {
+    left: 0 !important;
+  }
+  .sidebar-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    background: rgba(0, 0, 0, 0.4);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    z-index: 90;
+  }
+  
+  /* Show hamburger and close buttons */
+  .mobile-menu-btn {
+    display: flex !important;
+  }
+  .mobile-close-btn {
+    display: flex !important;
+  }
+
+  /* Hide desktop header nav */
+  .desktop-nav {
+    display: none !important;
+  }
+
+  /* Padding adjustments */
+  .app-header {
+    padding: 0 16px !important;
+  }
+  .page-content-main {
+    padding: 20px 16px 40px !important;
+  }
+
+  /* Dashboard Grid Overrides */
+  .dashboard-grid {
+    grid-template-columns: 1fr !important;
+    gap: 24px !important;
+  }
+
+  /* Vault Cards Grid Overrides */
+  .vault-cards-grid {
+    grid-template-columns: 1fr !important;
+    gap: 16px !important;
+    padding: 16px !important;
+  }
+
+  /* Stat Cards Wrapping */
+  .stat-cards-container {
+    gap: 12px !important;
+    margin-bottom: 24px !important;
+  }
+  
+  /* Bottom Banner Stack */
+  .bottom-banner {
+    flex-direction: column !important;
+    align-items: flex-start !important;
+    gap: 20px !important;
+    padding: 20px 24px !important;
+  }
+}
+
+@media (max-width: 640px) {
+  /* Stat Card text scaling for extra small screens */
+  .stat-cards-container > div {
+    min-width: 100% !important;
+  }
+}

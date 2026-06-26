@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import {
-  LayoutDashboard, Plus, Zap, Users, Wallet, LogOut,
-  Copy, ExternalLink, Globe, HelpCircle, Sun, Moon
+  LayoutDashboard, Plus, Users, Wallet, LogOut,
+  Copy, ExternalLink, Globe, HelpCircle, Sun, Moon, X
 } from 'lucide-react';
 import { useWallet } from '../hooks/useWallet';
 import { setMockWallet } from '../lib/stellar';
@@ -9,7 +9,6 @@ import { setMockWallet } from '../lib/stellar';
 const NAV_ITEMS = [
   { id: 'dashboard',   label: 'My Vaults',       Icon: LayoutDashboard },
   { id: 'create',      label: 'Create Vault',     Icon: Plus },
-  { id: 'triggers',    label: 'Public Triggers',  Icon: Zap },
   { id: 'beneficiary', label: 'Beneficiary View', Icon: Users },
 ];
 
@@ -18,9 +17,11 @@ interface SidebarProps {
   setActiveTab: (tab: string) => void;
   theme: 'light' | 'dark';
   setTheme: (t: 'light' | 'dark') => void;
+  isOpen?: boolean;
+  onClose?: () => void;
 }
 
-export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, theme, setTheme }) => {
+export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, theme, setTheme, isOpen, onClose }) => {
   const { address, balance, isConnected, isMock, connect, disconnect } = useWallet();
   const [copied, setCopied] = useState(false);
 
@@ -40,18 +41,21 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, theme
   };
 
   return (
-    <aside style={{
-      width: '280px',
-      minWidth: '280px',
-      background: '#fff',
-      borderRight: '1px solid #ece8e4',
-      display: 'flex',
-      flexDirection: 'column',
-      height: '100vh',
-      position: 'sticky',
-      top: 0,
-      overflowY: 'auto',
-    }}>
+    <aside
+      className={`app-sidebar ${isOpen ? 'open' : ''}`}
+      style={{
+        width: '280px',
+        minWidth: '280px',
+        background: '#fff',
+        borderRight: '1px solid #ece8e4',
+        display: 'flex',
+        flexDirection: 'column',
+        height: '100vh',
+        position: 'sticky',
+        top: 0,
+        overflowY: 'auto',
+      }}
+    >
       {/* ── Logo ── */}
       <div style={{ padding: '28px 24px 24px', borderBottom: '1px solid #ece8e4' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
@@ -72,6 +76,22 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, theme
             </div>
             <div style={{ fontSize: '12px', color: '#999', fontWeight: 500, marginTop: '2px' }}>Decentralized Inheritance</div>
           </div>
+          
+          <button
+            className="mobile-close-btn"
+            onClick={onClose}
+            style={{
+              background: 'none',
+              border: 'none',
+              cursor: 'pointer',
+              color: '#666',
+              display: 'none',
+              marginLeft: 'auto',
+              padding: '6px',
+            }}
+          >
+            <X size={20} />
+          </button>
         </div>
       </div>
 
@@ -82,7 +102,10 @@ export const Sidebar: React.FC<SidebarProps> = ({ activeTab, setActiveTab, theme
           return (
             <button
               key={id}
-              onClick={() => setActiveTab(id)}
+              onClick={() => {
+                setActiveTab(id);
+                if (onClose) onClose();
+              }}
               style={{
                 width: '100%',
                 display: 'flex',

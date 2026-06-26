@@ -4,7 +4,6 @@ import { Sidebar } from './components/Sidebar';
 import { Dashboard } from './pages/Dashboard';
 import { CreateVault } from './pages/CreateVault';
 import { VaultDetail } from './pages/VaultDetail';
-import { PublicTriggers } from './pages/PublicTriggers';
 import { BeneficiaryView } from './pages/BeneficiaryView';
 import { addMockTime, getMockWallet } from './lib/stellar';
 import { useVaultEvents } from './hooks/useVaultEvents';
@@ -14,15 +13,18 @@ function App() {
   const [selectedVaultId, setSelectedVaultId] = useState<number | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
   const [theme, setTheme] = useState<'light' | 'dark'>('light');
+  const [isSidebarOpen, setIsSidebarOpen] = useState(false);
 
   const handleSelectVault = (vaultId: number) => {
     setSelectedVaultId(vaultId);
     setActiveTab('detail');
+    setIsSidebarOpen(false);
   };
 
   const handleTabChange = (tab: string) => {
     setActiveTab(tab);
     setSelectedVaultId(null);
+    setIsSidebarOpen(false);
   };
 
   const handleSimulateTime = (seconds: number) => {
@@ -61,8 +63,6 @@ function App() {
         return selectedVaultId !== null
           ? <VaultDetail vaultId={selectedVaultId} onBackToDashboard={() => handleTabChange('dashboard')} />
           : <Dashboard onSelectVault={handleSelectVault} onNavigateToCreate={() => handleTabChange('create')} />;
-      case 'triggers':
-        return <PublicTriggers />;
       case 'beneficiary':
         return <BeneficiaryView />;
       default:
@@ -71,25 +71,36 @@ function App() {
   };
 
   return (
-    <div style={{ display: 'flex', minHeight: '100vh', fontFamily: "'Outfit', 'Inter', system-ui, sans-serif" }}>
+    <div className="app-container" style={{ display: 'flex', minHeight: '100vh', fontFamily: "'Outfit', 'Inter', system-ui, sans-serif" }}>
+      {/* Sidebar Overlay (Mobile only) */}
+      {isSidebarOpen && (
+        <div
+          className="sidebar-overlay"
+          onClick={() => setIsSidebarOpen(false)}
+        />
+      )}
+
       {/* Sidebar */}
       <Sidebar
         activeTab={activeTab}
         setActiveTab={handleTabChange}
         theme={theme}
         setTheme={setTheme}
+        isOpen={isSidebarOpen}
+        onClose={() => setIsSidebarOpen(false)}
       />
 
       {/* Right column: Navbar + Content */}
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+      <div className="main-content-column" style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
         <Navbar
           activeTab={activeTab}
           setActiveTab={handleTabChange}
           onSimulateTime={handleSimulateTime}
+          onToggleSidebar={() => setIsSidebarOpen(true)}
         />
 
         {/* Page Content */}
-        <main style={{ flex: 1, padding: '36px 40px 60px', overflowY: 'auto' }}>
+        <main className="page-content-main" style={{ flex: 1, padding: '36px 40px 60px', overflowY: 'auto' }}>
           {renderContent()}
         </main>
       </div>

@@ -205,7 +205,14 @@ export const VaultDetail: React.FC<VaultDetailProps> = ({ vaultId, onBackToDashb
               <div>
                 <span className="text-[10px] text-gray-500 uppercase font-bold block mb-1">Time Remaining</span>
                 <div className="text-base font-bold text-white">
-                  <CountdownTimer deadline={vault.lastCheckIn + vault.checkInInterval + vault.gracePeriod} state={vault.state} />
+                  <CountdownTimer 
+                    deadline={
+                      isOwner 
+                        ? vault.lastCheckIn + vault.checkInInterval 
+                        : vault.lastCheckIn + vault.checkInInterval + vault.gracePeriod
+                    } 
+                    state={vault.state} 
+                  />
                 </div>
               </div>
               <div className="p-3 bg-indigo-500/10 rounded-xl text-indigo-400">

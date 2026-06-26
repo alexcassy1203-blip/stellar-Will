@@ -71,7 +71,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onSelectVault, onNavigateT
   return (
     <div>
       {/* ── Stat Cards ── */}
-      <div style={{ display: 'flex', gap: '20px', marginBottom: '36px', flexWrap: 'wrap' }}>
+      <div className="stat-cards-container" style={{ display: 'flex', gap: '20px', marginBottom: '36px', flexWrap: 'wrap' }}>
         <StatCard
           icon={<Wallet size={24} />}
           label="Total Vault Capital"
@@ -102,7 +102,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onSelectVault, onNavigateT
       </div>
 
       {/* ── Main Grid: Vaults + Feed ── */}
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 380px', gap: '28px', alignItems: 'flex-start' }}>
+      <div className="dashboard-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 380px', gap: '28px', alignItems: 'flex-start' }}>
 
         {/* Left: Vaults */}
         <div>
@@ -129,7 +129,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onSelectVault, onNavigateT
             boxShadow: '0 2px 10px rgba(0,0,0,0.05)',
           }}>
             {loading ? (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', padding: '24px' }}>
+              <div className="vault-cards-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', padding: '24px' }}>
                 {[1, 2].map(n => (
                   <div key={n} style={{ background: '#f9f7f5', borderRadius: '14px', padding: '24px', height: '280px' }}>
                     {[65, 100, 80, 45].map((w, i) => (
@@ -164,7 +164,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onSelectVault, onNavigateT
                 </button>
               </div>
             ) : (
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', padding: '24px' }}>
+              <div className="vault-cards-grid" style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', padding: '24px' }}>
                 {vaults.map(vault => (
                   <VaultCard key={vault.id} vault={vault} onSelect={onSelectVault} onRefresh={() => setRefreshTrigger(t => t + 1)} />
                 ))}
@@ -181,7 +181,7 @@ export const Dashboard: React.FC<DashboardProps> = ({ onSelectVault, onNavigateT
       </div>
 
       {/* ── Red Marble Bottom Banner ── */}
-      <div style={{
+      <div className="bottom-banner" style={{
         marginTop: '36px',
         borderRadius: '18px',
         background: 'url(/src/assets/red_marble.png) center/cover',
