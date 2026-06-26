@@ -1,5 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Navbar } from './components/Navbar';
+import { Sidebar } from './components/Sidebar';
 import { Dashboard } from './pages/Dashboard';
 import { CreateVault } from './pages/CreateVault';
 import { VaultDetail } from './pages/VaultDetail';
@@ -12,22 +13,26 @@ function App() {
   const [activeTab, setActiveTab] = useState<string>('dashboard');
   const [selectedVaultId, setSelectedVaultId] = useState<number | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
+  const [theme, setTheme] = useState<'light' | 'dark'>('light');
 
   const handleSelectVault = (vaultId: number) => {
     setSelectedVaultId(vaultId);
     setActiveTab('detail');
   };
 
+  const handleTabChange = (tab: string) => {
+    setActiveTab(tab);
+    setSelectedVaultId(null);
+  };
+
   const handleSimulateTime = (seconds: number) => {
     addMockTime(seconds);
-    // Reload state across current page components
     const event = new CustomEvent('stellarwill_mock_event', {
       detail: { type: 'CheckedIn', vaultId: 0, details: `Simulated ${seconds}s time passage`, timestamp: Date.now() / 1000 }
     });
     window.dispatchEvent(event);
   };
 
-  // Toast listener for live receipt of funds
   useVaultEvents({
     onEvent: (log) => {
       if (log.type === 'FundsDistributed') {
@@ -39,12 +44,9 @@ function App() {
     }
   });
 
-  // Clear toast after 6 seconds
   useEffect(() => {
     if (toastMessage) {
-      const timer = setTimeout(() => {
-        setToastMessage(null);
-      }, 6000);
+      const timer = setTimeout(() => setToastMessage(null), 6000);
       return () => clearTimeout(timer);
     }
   }, [toastMessage]);
@@ -52,56 +54,55 @@ function App() {
   const renderContent = () => {
     switch (activeTab) {
       case 'dashboard':
-        return (
-          <Dashboard
-            onSelectVault={handleSelectVault}
-            onNavigateToCreate={() => setActiveTab('create')}
-          />
-        );
+        return <Dashboard onSelectVault={handleSelectVault} onNavigateToCreate={() => handleTabChange('create')} />;
       case 'create':
-        return <CreateVault onBackToDashboard={() => setActiveTab('dashboard')} />;
+        return <CreateVault onBackToDashboard={() => handleTabChange('dashboard')} />;
       case 'detail':
-        return selectedVaultId !== null ? (
-          <VaultDetail vaultId={selectedVaultId} onBackToDashboard={() => setActiveTab('dashboard')} />
-        ) : (
-          <Dashboard
-            onSelectVault={handleSelectVault}
-            onNavigateToCreate={() => setActiveTab('create')}
-          />
-        );
+        return selectedVaultId !== null
+          ? <VaultDetail vaultId={selectedVaultId} onBackToDashboard={() => handleTabChange('dashboard')} />
+          : <Dashboard onSelectVault={handleSelectVault} onNavigateToCreate={() => handleTabChange('create')} />;
       case 'triggers':
         return <PublicTriggers />;
       case 'beneficiary':
         return <BeneficiaryView />;
       default:
-        return (
-          <Dashboard
-            onSelectVault={handleSelectVault}
-            onNavigateToCreate={() => setActiveTab('create')}
-          />
-        );
+        return <Dashboard onSelectVault={handleSelectVault} onNavigateToCreate={() => handleTabChange('create')} />;
     }
   };
 
   return (
-    <div className="min-h-screen bg-gray-950 text-gray-100 flex flex-col">
-      <Navbar
+    <div style={{ display: 'flex', minHeight: '100vh', fontFamily: "'Outfit', 'Inter', system-ui, sans-serif" }}>
+      {/* Sidebar */}
+      <Sidebar
         activeTab={activeTab}
-        setActiveTab={(tab) => {
-          setActiveTab(tab);
-          setSelectedVaultId(null);
-        }}
-        onSimulateTime={handleSimulateTime}
+        setActiveTab={handleTabChange}
+        theme={theme}
+        setTheme={setTheme}
       />
 
-      {/* Main Container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-8">
-        {renderContent()}
-      </main>
+      {/* Right column: Navbar + Content */}
+      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minWidth: 0 }}>
+        <Navbar
+          activeTab={activeTab}
+          setActiveTab={handleTabChange}
+          onSimulateTime={handleSimulateTime}
+        />
 
-      {/* Event Notification Toast */}
+        {/* Page Content */}
+        <main style={{ flex: 1, padding: '36px 40px 60px', overflowY: 'auto' }}>
+          {renderContent()}
+        </main>
+      </div>
+
+      {/* Toast */}
       {toastMessage && (
-        <div className="fixed bottom-5 right-5 z-50 max-w-sm glass-card border border-purple-500 bg-purple-950/80 px-4 py-3 rounded-xl shadow-2xl text-xs text-white animate-bounce">
+        <div style={{
+          position: 'fixed', bottom: '20px', right: '20px', zIndex: 100,
+          background: 'linear-gradient(135deg, #8B0000, #5C0000)',
+          color: 'white', padding: '12px 20px', borderRadius: '12px',
+          boxShadow: '0 8px 24px rgba(139,0,0,0.3)', fontSize: '13px', fontWeight: 600,
+          maxWidth: '320px',
+        }}>
           {toastMessage}
         </div>
       )}
