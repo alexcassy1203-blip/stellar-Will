@@ -4,11 +4,37 @@ import { LiveFeed } from '../components/LiveFeed';
 import { Vault } from '../types/vault';
 import { getVaultsByOwner } from '../lib/stellar';
 import { useWallet } from '../hooks/useWallet';
-import { Plus, Info } from 'lucide-react';
+import { Plus, Shield, Wallet, Box, Calendar, Users, ArrowRight } from 'lucide-react';
 
 interface DashboardProps {
   onSelectVault: (vaultId: number) => void;
   onNavigateToCreate: () => void;
+}
+
+function StatCard({ icon, label, value, sub, showDot }: {
+  icon: React.ReactNode; label: string; value: React.ReactNode; sub?: string; showDot?: boolean;
+}) {
+  return (
+    <div style={{
+      background: 'white', borderRadius: '18px', border: '1px solid #ece8e4',
+      padding: '26px 28px', flex: 1, minWidth: '200px',
+      boxShadow: '0 2px 10px rgba(0,0,0,0.05)',
+      display: 'flex', flexDirection: 'column', gap: '8px',
+    }}>
+      <div style={{ width: '48px', height: '48px', borderRadius: '14px', background: '#fdf2f2', display: 'flex', alignItems: 'center', justifyContent: 'center', color: '#8B0000', marginBottom: '6px' }}>
+        {icon}
+      </div>
+      <div style={{ fontSize: '12px', fontWeight: 700, color: '#aaa', textTransform: 'uppercase', letterSpacing: '0.6px' }}>{label}</div>
+      <div style={{ fontSize: '32px', fontWeight: 800, color: '#1a1a1a', lineHeight: 1 }}>{value}</div>
+      {sub && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '7px' }}>
+          {showDot && <div style={{ width: '7px', height: '7px', borderRadius: '50%', background: '#8B0000', flexShrink: 0 }} />}
+          <div style={{ fontSize: '13px', color: '#888', fontWeight: 500 }}>{sub}</div>
+        </div>
+      )}
+      <div style={{ height: '2.5px', width: '32px', background: 'linear-gradient(90deg, #8B0000, #5C0000)', borderRadius: '3px', marginTop: '4px' }} />
+    </div>
+  );
 }
 
 export const Dashboard: React.FC<DashboardProps> = ({ onSelectVault, onNavigateToCreate }) => {
@@ -19,13 +45,18 @@ export const Dashboard: React.FC<DashboardProps> = ({ onSelectVault, onNavigateT
 
   useEffect(() => {
     const fetchVaults = async () => {
-      if (!address) return;
+      if (!address) {
+        setLoading(false);
+        setVaults([]);
+        return;
+      }
       setLoading(true);
       try {
         const data = await getVaultsByOwner(address);
         setVaults(data);
       } catch (err) {
         console.error('Error fetching vaults:', err);
+        setVaults([]);
       } finally {
         setLoading(false);
       }
@@ -35,102 +66,147 @@ export const Dashboard: React.FC<DashboardProps> = ({ onSelectVault, onNavigateT
 
   const totalLocked = vaults.reduce((acc, v) => v.state === 'Active' ? acc + v.balance : acc, 0);
   const activeCount = vaults.filter(v => v.state === 'Active').length;
+  const totalBeneficiaries = vaults.reduce((acc, v) => acc + v.beneficiaries.length, 0);
 
   return (
-    <div className="space-y-6">
-      {/* Overview Stats */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-5">
-        <div className="glass-card rounded-2xl p-5 flex flex-col justify-center border border-gray-800">
-          <span className="text-xs text-gray-500 font-medium uppercase tracking-wider block mb-1">Total Vault Capital</span>
-          <span className="text-3xl font-extrabold font-mono text-white tracking-tight">
-            {totalLocked.toLocaleString()} <span className="text-sm font-medium text-purple-400">XLM</span>
-          </span>
-        </div>
-
-        <div className="glass-card rounded-2xl p-5 flex flex-col justify-center border border-gray-800">
-          <span className="text-xs text-gray-500 font-medium uppercase tracking-wider block mb-1">Active Switches</span>
-          <span className="text-3xl font-extrabold font-mono text-white tracking-tight">
-            {activeCount} <span className="text-sm font-medium text-gray-500">vaults</span>
-          </span>
-        </div>
-
-        <div className="glass-card rounded-2xl p-5 flex flex-col justify-center border border-gray-800 bg-gradient-to-br from-purple-950/20 to-indigo-950/10">
-          <span className="text-xs text-purple-400 font-semibold uppercase tracking-wider block mb-1">Status Summary</span>
-          <p className="text-xs text-gray-400 leading-relaxed">
-            Owner check-in resets the timer. If deadline passes, beneficiaries trigger distribution permissionlessly.
-          </p>
-        </div>
+    <div>
+      {/* ── Stat Cards ── */}
+      <div style={{ display: 'flex', gap: '20px', marginBottom: '36px', flexWrap: 'wrap' }}>
+        <StatCard
+          icon={<Wallet size={24} />}
+          label="Total Vault Capital"
+          value={<>{totalLocked.toLocaleString()} <span style={{ fontSize: '18px', fontWeight: 600, color: '#8B0000' }}>XLM</span></>}
+          sub={`≈ $${(totalLocked * 0.09).toFixed(2)} USD`}
+        />
+        <StatCard
+          icon={<Box size={24} />}
+          label="Active Switches"
+          value={activeCount}
+          sub="All vaults active"
+          showDot
+        />
+        <StatCard
+          icon={<Users size={24} />}
+          label="Total Beneficiaries"
+          value={totalBeneficiaries}
+          sub="Across all vaults"
+          showDot
+        />
+        <StatCard
+          icon={<Calendar size={24} />}
+          label="Next Check-In"
+          value="—"
+          sub="No upcoming"
+          showDot
+        />
       </div>
 
-      {/* Main Grid: My Vaults & Event Stream */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left: Vault list */}
-        <div className="lg:col-span-2 space-y-4">
-          <div className="flex items-center justify-between">
-            <h3 className="text-lg font-bold text-gray-200">My Inheritances</h3>
+      {/* ── Main Grid: Vaults + Feed ── */}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 380px', gap: '28px', alignItems: 'flex-start' }}>
+
+        {/* Left: Vaults */}
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '22px' }}>
+            <h2 style={{ fontSize: '22px', fontWeight: 800, color: '#1a1a1a', margin: 0 }}>My Inheritances</h2>
             <button
               onClick={onNavigateToCreate}
-              className="flex items-center space-x-1.5 bg-purple-600/10 hover:bg-purple-600/20 border border-purple-500/30 text-purple-300 px-3 py-1.5 rounded-xl text-xs font-semibold transition"
+              style={{
+                display: 'flex', alignItems: 'center', gap: '8px',
+                background: 'url(/src/assets/red_marble.png) center/cover',
+                color: 'white', border: 'none', borderRadius: '12px',
+                padding: '12px 22px', fontSize: '14px', fontWeight: 700,
+                cursor: 'pointer', fontFamily: 'inherit',
+                boxShadow: '0 4px 16px rgba(139,0,0,0.3)',
+              }}
             >
-              <Plus className="w-4 h-4" />
-              <span>Create New Vault</span>
+              <Plus size={17} /> Create New Vault
             </button>
           </div>
 
-          {loading ? (
-            // Skeletons
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {[1, 2].map(n => (
-                <div key={n} className="glass-card rounded-2xl p-5 border border-gray-800 animate-pulse h-[280px] flex flex-col justify-between">
-                  <div>
-                    <div className="flex items-center justify-between mb-4">
-                      <div className="h-6 w-20 bg-gray-800 rounded-lg"></div>
-                      <div className="h-5 w-16 bg-gray-800 rounded-lg"></div>
-                    </div>
-                    <div className="h-8 w-32 bg-gray-800 rounded-lg mb-4"></div>
-                    <div className="h-4 w-40 bg-gray-800 rounded-lg"></div>
+          <div style={{
+            background: 'white', borderRadius: '18px', border: '1px solid #ece8e4',
+            minHeight: '420px', overflow: 'hidden', display: 'flex', flexDirection: 'column',
+            boxShadow: '0 2px 10px rgba(0,0,0,0.05)',
+          }}>
+            {loading ? (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', padding: '24px' }}>
+                {[1, 2].map(n => (
+                  <div key={n} style={{ background: '#f9f7f5', borderRadius: '14px', padding: '24px', height: '280px' }}>
+                    {[65, 100, 80, 45].map((w, i) => (
+                      <div key={i} className="animate-pulse" style={{ height: '16px', background: '#ece8e4', borderRadius: '8px', width: `${w}%`, marginBottom: '16px', animation: 'pulse 2s infinite' }} />
+                    ))}
                   </div>
-                  <div className="h-8 w-full bg-gray-800 rounded-lg border-t border-gray-900 pt-3"></div>
+                ))}
+              </div>
+            ) : vaults.length === 0 ? (
+              <div style={{ padding: '56px 32px', textAlign: 'center', display: 'flex', flexDirection: 'column', alignItems: 'center', margin: 'auto' }}>
+                <div style={{ width: '220px', height: '220px', marginBottom: '28px' }}>
+                  <img src="/src/assets/vault_illustration.png" alt="Vault" style={{ width: '100%', height: '100%', objectFit: 'contain' }} />
                 </div>
-              ))}
-            </div>
-          ) : vaults.length === 0 ? (
-            <div className="glass-card rounded-2xl p-10 border border-gray-800 text-center flex flex-col items-center justify-center space-y-4">
-              <div className="p-4 bg-purple-950/30 border border-purple-800/20 rounded-full text-purple-400">
-                <Info className="w-8 h-8" />
-              </div>
-              <div className="max-w-md space-y-1.5">
-                <h4 className="text-base font-bold text-gray-200">No Vaults Found</h4>
-                <p className="text-xs text-gray-500 leading-relaxed">
-                  You haven't created a digital inheritance vault on this account. Set up beneficiaries, deposit XLM, and manage your switch.
+                <h3 style={{ fontSize: '22px', fontWeight: 800, color: '#1a1a1a', margin: '0 0 12px' }}>
+                  You don't have any vaults yet
+                </h3>
+                <p style={{ fontSize: '15px', color: '#888', margin: '0 0 32px', maxWidth: '360px', lineHeight: 1.7 }}>
+                  Create your first inheritance vault to secure your legacy on Stellar.
                 </p>
+                <button
+                  onClick={onNavigateToCreate}
+                  style={{
+                    display: 'flex', alignItems: 'center', gap: '10px',
+                    background: 'url(/src/assets/red_marble.png) center/cover',
+                    color: 'white', border: 'none', borderRadius: '12px',
+                    padding: '14px 32px', fontSize: '15px', fontWeight: 700,
+                    cursor: 'pointer', fontFamily: 'inherit',
+                    boxShadow: '0 6px 20px rgba(139,0,0,0.3)',
+                  }}
+                >
+                  <Plus size={18} /> Create Your First Vault
+                </button>
               </div>
-              <button
-                onClick={onNavigateToCreate}
-                className="bg-purple-600 hover:bg-purple-700 px-5 py-2.5 rounded-xl text-xs font-bold text-white transition-all shadow-lg shadow-purple-600/10"
-              >
-                Create First Vault
-              </button>
-            </div>
-          ) : (
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              {vaults.map(vault => (
-                <VaultCard
-                  key={vault.id}
-                  vault={vault}
-                  onSelect={onSelectVault}
-                  onRefresh={() => setRefreshTrigger(t => t + 1)}
-                />
-              ))}
-            </div>
-          )}
+            ) : (
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '20px', padding: '24px' }}>
+                {vaults.map(vault => (
+                  <VaultCard key={vault.id} vault={vault} onSelect={onSelectVault} onRefresh={() => setRefreshTrigger(t => t + 1)} />
+                ))}
+              </div>
+            )}
+          </div>
         </div>
 
-        {/* Right: Event feed */}
-        <div className="space-y-4">
-          <h3 className="text-lg font-bold text-gray-200">Audit Feed</h3>
+        {/* Right: Audit Feed */}
+        <div>
+          <h2 style={{ fontSize: '22px', fontWeight: 800, color: '#1a1a1a', margin: '0 0 22px' }}>Audit Feed</h2>
           <LiveFeed />
         </div>
+      </div>
+
+      {/* ── Red Marble Bottom Banner ── */}
+      <div style={{
+        marginTop: '36px',
+        borderRadius: '18px',
+        background: 'url(/src/assets/red_marble.png) center/cover',
+        padding: '28px 36px',
+        display: 'flex',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        boxShadow: '0 8px 32px rgba(139,0,0,0.3)',
+      }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '18px' }}>
+          <div style={{ width: '56px', height: '56px', borderRadius: '14px', background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.28)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+            <Shield size={28} color="white" />
+          </div>
+          <div>
+            <div style={{ fontSize: '18px', fontWeight: 800, color: 'white', marginBottom: '5px' }}>
+              Secure. Decentralized. Immutable.
+            </div>
+            <div style={{ fontSize: '14px', color: 'rgba(255,255,255,0.8)', fontWeight: 500 }}>
+              Your legacy, protected by Stellar blockchain.
+            </div>
+          </div>
+        </div>
+        <button style={{ display: 'flex', alignItems: 'center', gap: '10px', background: 'rgba(255,255,255,0.15)', border: '1px solid rgba(255,255,255,0.3)', color: 'white', borderRadius: '12px', padding: '12px 24px', fontSize: '14px', fontWeight: 700, cursor: 'pointer', fontFamily: 'inherit', backdropFilter: 'blur(4px)' }}>
+          Learn More <ArrowRight size={16} />
+        </button>
       </div>
     </div>
   );
