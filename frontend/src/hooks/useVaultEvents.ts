@@ -61,6 +61,7 @@ export const useVaultEvents = ({ onEvent, vaultId, beneficiaryAddress }: UseVaul
     } else {
       let isSubscribed = true;
       let startLedger: number | undefined = undefined;
+      const processedEventIds = new Set<string>();
 
       const pollEvents = async () => {
         // Initialize startLedger to latest sequence
@@ -80,26 +81,66 @@ export const useVaultEvents = ({ onEvent, vaultId, beneficiaryAddress }: UseVaul
             const contractIds = [VAULT_FACTORY_ID, TRIGGER_ID, ...vaultAddresses];
 
             if (contractIds.length > 0 && startLedger) {
-              const response = await rpcServer.getEvents({
-                startLedger,
-                filters: [
-                  {
+              // Group contractIds into batches of 25 to respect the maximum 5 filters * 5 contract IDs RPC limit
+              const batchSize = 25;
+              const batches: string[][] = [];
+              for (let i = 0; i < contractIds.length; i += batchSize) {
+                batches.push(contractIds.slice(i, i + batchSize));
+              }
+
+              // Run all batches in parallel
+              const allEventsPromises = batches.map(async (batchIds) => {
+                const filters: any[] = [];
+                for (let j = 0; j < batchIds.length; j += 5) {
+                  filters.push({
                     type: 'contract',
-                    contractIds: contractIds
-                  }
-                ],
-                limit: 50
+                    contractIds: batchIds.slice(j, j + 5)
+                  });
+                }
+
+                try {
+                  const response = await rpcServer.getEvents({
+                    startLedger: startLedger!,
+                    filters,
+                    limit: 50
+                  });
+                  return response?.events || [];
+                } catch (err) {
+                  console.error('Error fetching events batch:', err);
+                  return [];
+                }
               });
 
-              if (response && response.events && response.events.length > 0) {
+              const results = await Promise.all(allEventsPromises);
+              
+              // Flat map and deduplicate by event ID
+              const allEvents = results.flat();
+
+              if (allEvents.length > 0) {
                 // Sort events chronologically by ledger and ID
-                const sortedEvents = [...response.events].sort((a, b) => {
+                const sortedEvents = [...allEvents].sort((a, b) => {
                   const ledgerDiff = a.ledger - b.ledger;
                   if (ledgerDiff !== 0) return ledgerDiff;
                   return a.id.localeCompare(b.id);
                 });
 
                 for (const event of sortedEvents) {
+                  if (processedEventIds.has(event.id)) {
+                    continue;
+                  }
+                  processedEventIds.add(event.id);
+
+                  // Keep set size reasonable
+                  if (processedEventIds.size > 1000) {
+                    const iterator = processedEventIds.keys();
+                    for (let k = 0; k < 200; k++) {
+                      const val = iterator.next().value;
+                      if (val) {
+                        processedEventIds.delete(val);
+                      }
+                    }
+                  }
+
                   const topics = event.topic.map(t => scValToNative(t));
                   const value = scValToNative(event.value);
                   const eventType = topics[0];
@@ -211,8 +252,8 @@ export const useVaultEvents = ({ onEvent, vaultId, beneficiaryAddress }: UseVaul
                     }
                   }
 
-                  // Increment startLedger past the processed event's ledger to prevent duplication
-                  startLedger = Math.max(startLedger, event.ledger + 1);
+                  // Update startLedger to current event's ledger to avoid skipping same-ledger events
+                  startLedger = Math.max(startLedger, event.ledger);
                 }
               }
             }
