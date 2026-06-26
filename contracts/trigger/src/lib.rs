@@ -1,5 +1,8 @@
 #![no_std]
-use soroban_sdk::{contract, contractimpl, contracttype, symbol_short, Address, Env};
+use soroban_sdk::{
+    contract, contractimpl, contracttype, symbol_short,
+    Address, Env, Symbol, Vec,
+};
 
 #[contracttype]
 #[derive(Clone)]
@@ -23,31 +26,39 @@ impl Trigger {
         env.storage().instance().get(&DataKey::Factory).unwrap()
     }
 
+    /// Anyone can call this once the vault deadline has passed.
     pub fn trigger_release(env: Env, vault_id: u64) {
-        let factory_addr: Address = env.storage().instance().get(&DataKey::Factory).unwrap();
-        let factory_client = stellar_will_vault_factory::VaultFactoryClient::new(&env, &factory_addr);
+        let factory_addr: Address = env
+            .storage()
+            .instance()
+            .get(&DataKey::Factory)
+            .unwrap();
 
-        // Retrieve vault address from factory
-        let vault_addr = factory_client.get_vault_address(&vault_id);
-        let vault_client = stellar_will_vault::VaultClient::new(&env, &vault_addr);
+        // Get vault address from factory via cross-contract invocation
+        let vault_addr: Address = env.invoke_contract(
+            &factory_addr,
+            &Symbol::new(&env, "get_vault_address"),
+            Vec::from_array(&env, [soroban_sdk::IntoVal::<Env, soroban_sdk::Val>::into_val(&vault_id, &env)]),
+        );
 
         // Check if vault is expired
-        if !vault_client.is_expired() {
+        let expired: bool = env.invoke_contract(
+            &vault_addr,
+            &Symbol::new(&env, "is_expired"),
+            Vec::new(&env),
+        );
+
+        if !expired {
             panic!("VaultNotExpired");
         }
 
-        // Call release_to_beneficiaries.
-        // Vault expects trigger to be the caller and authenticate.
-        // In Soroban, since this is trigger contract invoking it, we must verify authentication.
-        // Wait, inside Vault::release_to_beneficiaries, we did:
-        // let trigger = env.storage().instance().get(&DataKey::TriggerContract).unwrap();
-        // trigger.require_auth();
-        // Here, since current_contract_address() is the trigger, the Vault client call will be authenticated
-        // automatically when Trigger contract calls it (contracts have their own authentication context).
-        // Let's call release_to_beneficiaries.
-        vault_client.release_to_beneficiaries();
+        // Call release_to_beneficiaries
+        env.invoke_contract::<()>(
+            &vault_addr,
+            &Symbol::new(&env, "release_to_beneficiaries"),
+            Vec::new(&env),
+        );
 
-        // Emit trigger event
         env.events().publish(
             (symbol_short!("Triggered"), vault_id),
             env.ledger().timestamp(),
