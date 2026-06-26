@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useRef } from 'react';
 import { isMockEnabled, VAULT_FACTORY_ID, TRIGGER_ID } from '../lib/contracts';
 import { EventLog } from '../types/vault';
 import { rpcServer, simulateSorobanCall } from '../lib/stellar';
@@ -39,6 +39,12 @@ const getOrUpdateVaultAddresses = async (): Promise<string[]> => {
 };
 
 export const useVaultEvents = ({ onEvent, vaultId, beneficiaryAddress }: UseVaultEventsProps) => {
+  const onEventRef = useRef(onEvent);
+
+  useEffect(() => {
+    onEventRef.current = onEvent;
+  }, [onEvent]);
+
   useEffect(() => {
     if (isMockEnabled()) {
       const handleMockEvent = (e: Event) => {
@@ -53,7 +59,7 @@ export const useVaultEvents = ({ onEvent, vaultId, beneficiaryAddress }: UseVaul
           if (!log.details.toLowerCase().includes(beneficiaryAddress.toLowerCase().substring(0, 8))) return;
         }
 
-        onEvent(log);
+        onEventRef.current(log);
       };
 
       window.addEventListener('stellarwill_mock_event', handleMockEvent);
@@ -248,7 +254,7 @@ export const useVaultEvents = ({ onEvent, vaultId, beneficiaryAddress }: UseVaul
                     }
 
                     if (matches) {
-                      onEvent(eventLog);
+                      onEventRef.current(eventLog);
                     }
                   }
 
@@ -272,5 +278,5 @@ export const useVaultEvents = ({ onEvent, vaultId, beneficiaryAddress }: UseVaul
         isSubscribed = false;
       };
     }
-  }, [onEvent, vaultId, beneficiaryAddress]);
+  }, [vaultId, beneficiaryAddress]);
 };
